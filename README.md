@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/InterAi.png" alt="IntervAI Logo" width="120" />
+</p>
+
 # IntervAI — AI-Powered Interview Practice Platform
 
 Practice mock interviews with AI-generated questions, record your answers via speech-to-text, and receive instant personalized feedback — all in your browser.
