@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --background: #faf6f1;
+  --foreground: #1f2937;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #1a4d4d;
+    --foreground: #f5ebe0;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@layer base {
+  :root {
+    --background: 33 40% 96%;
+    --foreground: 220 13% 13%;
+    --card: 33 40% 96%;
+    --card-foreground: 220 13% 13%;
+    --popover: 33 40% 96%;
+    --popover-foreground: 220 13% 13%;
+    --primary: 180 44% 27%;
+    --primary-foreground: 33 40% 96%;
+    --secondary: 25 43% 85%;
+    --secondary-foreground: 220 13% 13%;
+    --muted: 33 25% 90%;
+    --muted-foreground: 220 10% 46%;
+    --accent: 150 18% 43%;
+    --accent-foreground: 33 40% 96%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 33 20% 85%;
+    --input: 33 20% 85%;
+    --ring: 180 44% 27%;
+    --chart-1: 150 18% 43%;
+    --chart-2: 25 43% 85%;
+    --chart-3: 180 25% 65%;
+    --chart-4: 10 50% 80%;
+    --chart-5: 150 23% 52%;
+    --radius: 1.25rem;
+  }
+  .dark {
+    --background: 180 44% 13%;
+    --foreground: 33 40% 96%;
+    --card: 180 44% 13%;
+    --card-foreground: 33 40% 96%;
+    --popover: 180 44% 13%;
+    --popover-foreground: 33 40% 96%;
+    --primary: 180 33% 38%;
+    --primary-foreground: 33 40% 96%;
+    --secondary: 150 15% 25%;
+    --secondary-foreground: 33 40% 96%;
+    --muted: 150 15% 25%;
+    --muted-foreground: 33 20% 70%;
+    --accent: 150 15% 25%;
+    --accent-foreground: 33 40% 96%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 33 40% 96%;
+    --border: 150 15% 25%;
+    --input: 150 15% 25%;
+    --ring: 180 33% 38%;
+    --chart-1: 150 18% 43%;
+    --chart-2: 25 43% 85%;
+    --chart-3: 180 25% 65%;
+    --chart-4: 10 50% 80%;
+    --chart-5: 150 23% 52%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  @keyframes blob {
+    0%, 100% {
+      transform: translate(0, 0) scale(1);
+    }
+    25% {
+      transform: translate(20px, -50px) scale(1.1);
+    }
+    50% {
+      transform: translate(-20px, 20px) scale(0.9);
+    }
+    75% {
+      transform: translate(50px, 50px) scale(1.05);
+    }
+  }
+  
+  .animate-blob {
+    animation: blob 7s infinite;
+  }
+  
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+}
