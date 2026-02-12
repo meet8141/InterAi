@@ -1,6 +1,8 @@
 "use client";
 import { UserButton } from '@clerk/clerk-react';
 import AddNewInterview from './_components/AddNewInterview';
+import BasicNonTechincal from './_components/BasicNonTechincal';
+import Dressing from './_components/dressing';
 import React from 'react'
 import InterviewList from './_components/InterviewList';
 import { Leaf,LayoutDashboard } from 'lucide-react';
@@ -33,6 +35,8 @@ function Dashboard() {
           <h2 className='text-xl font-medium text-[#1f2937] mb-4'>Begin a New Session</h2>
           <div className='grid grid-cols-1 md:grid-cols-3 gap-6'>
             <AddNewInterview />
+            <BasicNonTechincal />
+            <Dressing />
           </div>
         </div>
 

@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from "@/components/ui/textarea";
 import { chatSession } from "utils/Geminimodel";
-import { LoaderCircle } from 'lucide-react';
+import { LoaderCircle, Sparkles } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { toast } from 'sonner';
 import { useUser } from '@clerk/clerk-react';
@@ -127,7 +127,7 @@ function AddNewInterview() {
         >
             <div className='flex flex-col items-center justify-center space-y-4'>
                 <div className='w-20 h-20 bg-gradient-to-br from-[#2d5f5f] to-[#4a6b5b] rounded-[40%_60%_50%_50%/60%_40%_60%_40%] flex items-center justify-center group-hover:scale-110 group-hover:rotate-90 transition-all duration-500 shadow-soft'>
-                    <span className='text-white text-4xl font-light'>+</span>
+                    <span className='text-white text-5xl font-light'>+</span>
                 </div>
                 <h2 className='text-xl font-medium text-[#1f2937] group-hover:text-[#2d5f5f] transition-colors'>
                     Create New Session
@@ -135,6 +135,10 @@ function AddNewInterview() {
                 <p className='text-base text-[#6b7280] text-center font-light leading-relaxed'>
                     Begin a thoughtful interview practice
                 </p>
+                <div className='flex items-center gap-1.5 text-xs text-[#4a6b5b] font-medium bg-[#f5ebe0] px-3 py-1.5 rounded-full border border-[#e5d5c8]'>
+                    <Sparkles className='w-3.5 h-3.5' />
+                    AI-Powered Mock Interview
+                </div>
             </div>
         </div>
         

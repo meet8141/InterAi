@@ -4,11 +4,13 @@ import Image from 'next/image';
 import React, { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import useSpeechToText from 'react-hook-speech-to-text';
-import { Mic, MicOff, Video } from 'lucide-react';
+import { Mic, MicOff, Video, Shield, TrendingUp, AlertTriangle, Info, Camera, Eye, Sun, MonitorSpeaker, MessageSquare, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { useUser } from '@clerk/clerk-react';
 import { chatSession } from '@/utils/Geminimodel';
 import moment from 'moment';
+import { analyzeConfidence, getConfidenceColor, getConfidenceBgColor } from '@/utils/confidenceAnalyzer';
+import { captureFrame, analyzeVideoFrame, getVideoScoreColor, getVideoScoreBgColor, getCheckStatusIcon } from '@/utils/videoAnalyzer';
 
 const Webcam = dynamic(() => import('react-webcam'), { ssr: false });
 
@@ -17,6 +19,9 @@ function RecordAnswerSection({ mockinterviewquestions, activequestionindex, inte
   const { user } = useUser();
   const [loading, setLoading] = useState(false);
   const [webcamError, setWebcamError] = useState('');
+  const [recordingStartTime, setRecordingStartTime] = useState(null);
+  const webcamRef = React.useRef(null);
+  const videoFeedbackRef = React.useRef(null);
   
   const {
     error,
@@ -57,8 +62,20 @@ function RecordAnswerSection({ mockinterviewquestions, activequestionindex, inte
   const saveUserAnswer = async () => {
     setLoading(true);
     if (isRecording) {
+      // Capture & analyze video frame right before stopping
+      try {
+        const frame = captureFrame(webcamRef);
+        if (frame) {
+          const vf = await analyzeVideoFrame(frame);
+          videoFeedbackRef.current = vf;
+        }
+      } catch (err) {
+        console.error('Video analysis error:', err);
+      }
       stopSpeechToText();
     } else {
+      setRecordingStartTime(Date.now());
+      videoFeedbackRef.current = null;
       startSpeechToText();
     }
     setLoading(false);
@@ -70,7 +87,35 @@ function RecordAnswerSection({ mockinterviewquestions, activequestionindex, inte
       return;
     }
   
-    const feedbackPrompt = `Question:${mockinterviewquestions[activequestionindex]?.question} Answer:${userAnswer}, Depends on question and user answer for given interview question please give us rating for answer and feedback in JSON format with rating and feedback fields.Make sure that answer is in JSON format only.`;
+    // ── Confidence Analysis ──
+    const durationSec = recordingStartTime ? (Date.now() - recordingStartTime) / 1000 : null;
+    const confidence = analyzeConfidence(userAnswer, durationSec);
+    const videoData = videoFeedbackRef.current;
+
+    const feedbackPrompt = `You are a senior technical interviewer evaluating a candidate's spoken answer. Be liberal and forgiving in your evaluation.
+
+Question: ${mockinterviewquestions[activequestionindex]?.question}
+Candidate's Answer: ${userAnswer}
+
+Speech confidence analysis: Score ${confidence.score}/100 (${confidence.level}), ${confidence.metrics.fillerCount} filler words, ${confidence.metrics.hedgeCount} hedging phrases, ${confidence.metrics.assertiveCount} assertive phrases, vocab richness ${confidence.metrics.vocabRichness}%, ${confidence.metrics.wordCount} total words, ${confidence.metrics.sentenceCount} sentences${confidence.metrics.pace ? `, pace: ${confidence.metrics.pace} words/sec` : ''}.
+
+EVALUATION GUIDELINES — be generous and understanding:
+- Technical questions are often abstract and open-ended. Accept ANY valid interpretation or approach.
+- The candidate is speaking, not writing — expect informal phrasing, incomplete sentences, and less structure. Do NOT penalize spoken language style.
+- If the candidate demonstrates understanding of the core concept, even partially or through examples/analogies, give credit.
+- Accept high-level/abstract explanations just as much as detailed/specific ones — both are valid.
+- Do NOT require exact terminology or textbook definitions. Practical understanding matters more.
+- If the answer is in the right direction but incomplete, rate it favorably (5+) and suggest what could be added.
+- Only give low ratings (1-3) if the answer is fundamentally wrong, completely off-topic, or essentially empty.
+- A rating of 7+ should be given if the candidate clearly understands the concept, even if they miss minor details.
+
+Return your evaluation as JSON only with these fields:
+- rating (1-10): Be generous — reward understanding over perfection
+- feedback: Constructive and encouraging. Comment on content quality AND delivery confidence. Mention what was good before suggesting improvements.
+- speechTips: An array of 2-3 specific tips on how the candidate should improve their speaking style (pace, tone, structure, word choice). Be detailed and actionable.
+- confidenceScore (${confidence.score})
+
+JSON format only, no extra text.`;
   
     const result = await chatSession.sendMessage(feedbackPrompt);
     let responseText = await result.response.text();
@@ -99,6 +144,11 @@ function RecordAnswerSection({ mockinterviewquestions, activequestionindex, inte
         correctanswer: mockinterviewquestions[activequestionindex]?.answer,
         useranswer: userAnswer,
         feedback: jsonResponse?.feedback,
+        detailedFeedback: JSON.stringify({
+          confidence: { score: confidence.score, level: confidence.level, metrics: confidence.metrics, tips: confidence.tips, speechCoaching: confidence.speechCoaching },
+          video: videoData ? { score: videoData.score, level: videoData.level, checks: videoData.checks, tips: videoData.tips } : null,
+          speechTips: jsonResponse?.speechTips || [],
+        }),
         rating: jsonResponse?.rating,
         userEmail: user?.primaryEmailAddress?.emailAddress,
         createdat: moment().format('YYYY-MM-DD HH:mm:ss')
@@ -142,7 +192,9 @@ function RecordAnswerSection({ mockinterviewquestions, activequestionindex, inte
             <>
               <Image src="/webcam.png" width={200} height={200} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-30" alt="Webcam Placeholder" />
               <Webcam
+                ref={webcamRef}
                 mirrored={true}
+                screenshotFormat="image/jpeg"
                 onUserMediaError={handleWebcamError}
                 className="relative z-10 w-full h-full object-cover"
               />
