@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowRight, Flag, Lightbulb, Volume2, Mic, MicOff, Video, Us
 import dynamic from 'next/dynamic';
 import useSpeechToText from 'react-hook-speech-to-text';
 import { toast } from 'sonner';
-import { useUser } from '@clerk/clerk-react';
+import { useUser } from '@/context/AuthContext';
 import { sendMessage } from '@/utils/Geminimodel';
 import Image from 'next/image';
 import { analyzeConfidence, getConfidenceColor, getConfidenceBgColor } from '@/utils/confidenceAnalyzer';
