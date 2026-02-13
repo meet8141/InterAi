@@ -7,16 +7,17 @@ import {
 } from "@/components/ui/collapsible";
 import { ChevronDown, Trophy, Star, MessageSquare, CheckCircle2, XCircle, ArrowLeft, Shield, Camera, Mic2, TrendingUp, AlertTriangle, BarChart3, Video, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 
-function Feedback({ params }) {
+function Feedback() {
+  const params = useParams();
   const [feedbackData, setFeedbackData] = useState([]);
   const [averageRating, setAverageRating] = useState(0);
   const router = useRouter();
 
   useEffect(() => {
-    GetInterviewData();
-  }, []);
+    if (params?.interviewid) GetInterviewData();
+  }, [params]);
 
   const GetInterviewData = async () => {
     const response = await fetch(`/api/feedback/${params.interviewid}`);
@@ -51,6 +52,13 @@ function Feedback({ params }) {
   const parseDetailed = (item) => {
     if (!item.detailedFeedback) return null;
     try { return JSON.parse(item.detailedFeedback); } catch { return null; }
+  };
+
+  const statusPriority = (status) => {
+    if (status === 'poor') return 3;
+    if (status === 'warning') return 2;
+    if (status === 'info') return 1;
+    return 0;
   };
 
   // Aggregate session-level stats
@@ -129,13 +137,6 @@ function Feedback({ params }) {
       confidenceTips: allConfidenceTips.slice(0, 8),
     };
   }, [feedbackData]);
-
-  const statusPriority = (status) => {
-    if (status === 'poor') return 3;
-    if (status === 'warning') return 2;
-    if (status === 'info') return 1;
-    return 0;
-  };
 
   const getScoreColor = (score) => {
     if (score >= 80) return 'text-[#16a34a]';

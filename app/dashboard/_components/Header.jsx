@@ -27,7 +27,7 @@ function Header() {
                     {/* Logo */}
                     <Link href="/" className='flex items-center space-x-3 hover:opacity-80 transition-all duration-300 hover:scale-105'>
                         <div className='w-12 h-12 bg-gradient-to-br from-[#2d5f5f] to-[#4a6b5b] rounded-[40%_60%_50%_50%/60%_40%_60%_40%] flex items-center justify-center shadow-soft hover:shadow-md transition-shadow'>
-                            <img src="logo.svg" alt="logo" />
+                            <img src="/logo.svg" alt="logo" />
                         </div>
                         <span className='hidden sm:block text-2xl  font-display font-bold text-[#1a4d4d]'>
                             IntervAi

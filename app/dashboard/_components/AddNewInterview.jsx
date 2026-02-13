@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from "@/components/ui/textarea";
-import { chatSession } from "utils/Geminimodel";
+import { sendMessage } from "utils/Geminimodel";
 import { LoaderCircle, Sparkles } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { toast } from 'sonner';
@@ -34,11 +34,11 @@ function AddNewInterview() {
         e.preventDefault();
         setLoading(true);
     
-        const Inputprompt = `Job position: ${Jobpost}, Job Description: ${JobDescription}, Experience: ${Experience}, Difficulty Level: ${difficulty}. Based on the Job position, Job Description, Experience, and Difficulty Level, give me 5 interview questions along with answers in JSON format. The questions should be appropriate for a ${difficulty} level candidate. For 'Student/Beginner' level, ask basic foundational questions. For 'Intermediate' level, ask questions that require practical understanding and some experience. For 'Expert' level, ask advanced questions that test deep knowledge, architecture decisions, and complex problem-solving. Provide both question and answer fields in the JSON.`;
+        const Inputprompt = `Job position: ${Jobpost}, Job Description: ${JobDescription}, Experience: ${Experience}, Difficulty Level: ${difficulty}. Based on the Job position, Job Description, Experience, and Difficulty Level, give me 5 interview questions along with answers in JSON format. The questions should be appropriate for a ${difficulty} level candidate. For 'Student/Beginner' level, ask basic foundational questions. For 'Intermediate' level, ask questions that require practical understanding and some experience. For 'Expert' level, ask advanced questions that test deep knowledge, architecture decisions, and complex problem-solving. Return ONLY a plain JSON array (no wrapping object) where each element has exactly "question" and "answer" fields. Example format: [{"question":"...","answer":"..."}]`;
     
         try {
             console.log("Sending request to Gemini...");
-            const result = await chatSession.sendMessage(Inputprompt);
+            const result = await sendMessage(Inputprompt);
             console.log("Gemini response received:", result);
     
             // Await the result's text content

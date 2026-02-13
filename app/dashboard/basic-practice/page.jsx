@@ -2,12 +2,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, Flag, Lightbulb, Volume2, Mic, MicOff, Video, Users, Shield, TrendingUp, AlertTriangle, Camera, Mic2, BookOpen, MessageSquare } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Flag, Lightbulb, Volume2, Mic, MicOff, Video, Users, Shield, TrendingUp, AlertTriangle, Camera, Mic2, BookOpen, MessageSquare, ChevronUp, ChevronDown } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import useSpeechToText from 'react-hook-speech-to-text';
 import { toast } from 'sonner';
 import { useUser } from '@clerk/clerk-react';
-import { chatSession } from '@/utils/Geminimodel';
+import { sendMessage } from '@/utils/Geminimodel';
 import Image from 'next/image';
 import { analyzeConfidence, getConfidenceColor, getConfidenceBgColor } from '@/utils/confidenceAnalyzer';
 import { captureFrame, analyzeVideoFrame, getVideoScoreColor, getVideoScoreBgColor, getCheckStatusIcon } from '@/utils/videoAnalyzer';
@@ -72,8 +72,13 @@ function BasicPractice() {
 
   const webcamRef = React.useRef(null);
   const videoFeedbackRef = React.useRef(null);
+  const processedResultsRef = React.useRef(0);
+  const intentionalStopRef = React.useRef(false);
+  const wantRecordingRef = React.useRef(false);
+  const hasSubmittedRef = React.useRef(false);
 
   const {
+    error: speechError,
     interimResult,
     isRecording,
     results,
@@ -84,25 +89,60 @@ function BasicPractice() {
     continuous: true,
     useLegacyResults: false,
     interimResults: true,
+    speechRecognitionProperties: {
+      lang: 'en-US',
+      maxAlternatives: 1,
+    },
   });
 
-  /* ── Accumulate speech results ── */
+  // Show speech recognition errors
   useEffect(() => {
-    if (results && results.length > 0) {
-      results.forEach((result) => {
-        if (result?.transcript) {
-          setUserAnswer((prev) => prev + ' ' + result.transcript);
-        }
-      });
+    if (speechError) {
+      console.error('[Speech] Recognition error:', speechError);
+      toast.error('Microphone error: ' + speechError, { duration: 4000 });
+    }
+  }, [speechError]);
+
+  /* ── Accumulate only NEW speech results (prevents duplicates) ── */
+  useEffect(() => {
+    if (results && results.length > processedResultsRef.current) {
+      const newResults = results.slice(processedResultsRef.current);
+      const newText = newResults
+        .map((r) => r?.transcript)
+        .filter(Boolean)
+        .join(' ');
+      if (newText) {
+        setUserAnswer((prev) => (prev ? prev + ' ' + newText : newText));
+      }
+      processedResultsRef.current = results.length;
     }
   }, [results]);
 
-  /* ── Auto-submit answer when recording stops ── */
+  /* ── Auto-restart if speech recognition silently stops while we still want recording ── */
   useEffect(() => {
-    if (!isRecording && userAnswer.length > 10) {
+    if (!isRecording && wantRecordingRef.current && !intentionalStopRef.current) {
+      console.warn('[Speech] Recognition stopped unexpectedly — restarting…');
+      const timer = setTimeout(() => {
+        if (wantRecordingRef.current) {
+          try {
+            startSpeechToText();
+          } catch (e) {
+            console.error('[Speech] Failed to restart:', e);
+          }
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [isRecording]);
+
+  /* ── Auto-submit answer when recording intentionally stops ── */
+  useEffect(() => {
+    if (!isRecording && intentionalStopRef.current && userAnswer.length > 10 && !hasSubmittedRef.current) {
+      hasSubmittedRef.current = true;
+      intentionalStopRef.current = false;
       submitAnswer();
     }
-  }, [userAnswer, isRecording]);
+  }, [isRecording]);
 
   useEffect(() => {
     if (isRecording) {
@@ -112,8 +152,11 @@ function BasicPractice() {
 
   /* ── Toggle recording (with video capture) ── */
   const toggleRecording = async () => {
-    setLoading(true);
     if (isRecording) {
+      setLoading(true);
+      // Mark as intentional stop so auto-restart doesn't kick in
+      intentionalStopRef.current = true;
+      wantRecordingRef.current = false;
       // Capture & analyze video frame right before stopping
       try {
         const frame = captureFrame(webcamRef);
@@ -125,12 +168,17 @@ function BasicPractice() {
         console.error('Video analysis error:', err);
       }
       stopSpeechToText();
+      setLoading(false);
     } else {
+      // Reset state for a fresh recording
+      processedResultsRef.current = 0;
+      intentionalStopRef.current = false;
+      wantRecordingRef.current = true;
+      hasSubmittedRef.current = false;
       setRecordingStartTime(Date.now());
       videoFeedbackRef.current = null;
       startSpeechToText();
     }
-    setLoading(false);
   };
 
   /* ── Get AI feedback for current answer ── */
@@ -169,7 +217,7 @@ Return your evaluation as JSON only with these fields:
 JSON format only, no extra text.`;
 
     try {
-      const result = await chatSession.sendMessage(prompt);
+      const result = await sendMessage(prompt);
       let responseText = await result.response.text();
       responseText = responseText.trim().replace(/```json/g, '').replace(/```/g, '').replace(/[\u0000-\u001F]+/g, '');
 
@@ -205,6 +253,8 @@ JSON format only, no extra text.`;
 
     setUserAnswer('');
     setResults([]);
+    processedResultsRef.current = 0;
+    hasSubmittedRef.current = false;
     setLoading(false);
   };
 
@@ -620,184 +670,203 @@ JSON format only, no extra text.`;
   }
 
   /* ═══════════════════════ Practice Session View ═══════════════════════ */
+  const [showQuestion, setShowQuestion] = useState(true);
+
   return (
-    <div className='min-h-screen bg-gradient-to-b from-[#faf6f1] via-[#f5ebe0] to-white relative'>
-      <div className='absolute top-20 right-10 w-72 h-72 bg-[#c5d5d0] rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-float pointer-events-none' />
-      <div className='absolute bottom-20 left-10 w-96 h-96 bg-[#f4cdb8] rounded-full mix-blend-multiply filter blur-3xl opacity-20 pointer-events-none' style={{ animationDelay: '2s' }} />
-
-      <div className='relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-10'>
-        {/* Page header */}
-        <div>
-          <div className='flex items-center gap-2 mb-2'>
-            <Link href='/dashboard' className='text-[#4a6b5b] hover:text-[#2d5f5f] transition-colors'>
-              <ArrowLeft className='w-5 h-5' />
-            </Link>
-            <h1 className='text-3xl md:text-4xl font-display font-normal text-[#1a4d4d]'>Non-Technical Practice</h1>
-          </div>
-          <p className='text-[#6b7280] text-lg font-light'>
-            Question {activeIndex + 1} of {NON_TECHNICAL_QUESTIONS.length} — take your time and answer confidently.
-          </p>
-        </div>
-
-        {/* Main grid */}
-        <div className='grid grid-cols-1 md:grid-cols-2 gap-10 items-start'>
-          {/* ── Left: Question Panel ── */}
-          <div className='bg-white/80 backdrop-blur-xl p-8 rounded-[32px] border-2 border-[#e5d5c8] shadow-soft'>
-            {/* Progress chips */}
-            <div className='mb-6'>
-              <h3 className='text-sm font-medium text-[#6b7280] uppercase tracking-wide mb-3'>Progress</h3>
-              <div className='flex flex-wrap gap-2'>
-                {NON_TECHNICAL_QUESTIONS.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setActiveIndex(i)}
-                    className={`
-                      px-4 py-2 rounded-full text-sm font-semibold transition-all duration-300 cursor-pointer
-                      ${activeIndex === i
-                        ? 'bg-[#2d5f5f] text-white shadow-soft scale-105'
-                        : feedbackList[i]
-                          ? 'bg-[#d4edda] text-[#1f5132] border border-[#c3e6cb]'
-                          : 'bg-[#f5ebe0] text-[#1f2937] hover:bg-[#f4cdb8]'
-                      }
-                    `}
-                  >
-                    Q{i + 1}
-                  </button>
-                ))}
+    <div className='h-screen bg-[#faf6f1] flex items-center justify-center p-6'>
+      <div className='relative w-full max-w-5xl overflow-hidden rounded-[28px] bg-[#1a4d4d]'
+        style={{ height: 'min(85vh, 760px)', boxShadow: '0 8px 32px rgba(45, 95, 95, 0.18)' }}>
+          {/* Webcam feed */}
+          {webcamError ? (
+            <div className='flex flex-col items-center justify-center h-full p-8 text-center'>
+              <div className='w-20 h-20 rounded-full bg-[#f5ebe0]/10 flex items-center justify-center mb-4'>
+                <Video className='w-10 h-10 text-[#f5ebe0]/40' />
               </div>
+              <p className='text-sm text-[#f5ebe0]/60'>{webcamError}</p>
             </div>
+          ) : (
+            <>
+              <Image src='/webcam.png' width={200} height={200} className='absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-5' alt='' />
+              <Webcam ref={webcamRef} mirrored screenshotFormat="image/jpeg" onUserMediaError={handleWebcamError} className='absolute inset-0 z-10 w-full h-full object-cover' />
+            </>
+          )}
 
-            {/* Category badge */}
-            <div className='mb-4'>
-              <span className='text-xs font-medium text-[#4a6b5b] bg-[#e8f5e9] px-3 py-1 rounded-full'>
-                {NON_TECHNICAL_QUESTIONS[activeIndex].category}
+          {/* ── TOP BAR ── */}
+          <div className='absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-5 py-3'>
+            <div className='flex items-center gap-3'>
+              <Link href='/dashboard' className='text-[#f5ebe0]/60 hover:text-[#f5ebe0] transition-colors'>
+                <ArrowLeft className='w-5 h-5' />
+              </Link>
+              {isRecording && (
+                <div className='flex items-center gap-1.5 bg-red-500 text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm'>
+                  <span className='w-1.5 h-1.5 bg-white rounded-full animate-pulse' />
+                  REC
+                </div>
+              )}
+              <span className='text-[#f5ebe0]/80 text-xs font-medium bg-[#1a4d4d]/60 backdrop-blur-sm px-2.5 py-0.5 rounded-full'>
+                Q{activeIndex + 1}/{NON_TECHNICAL_QUESTIONS.length}
               </span>
             </div>
 
-            {/* Active question */}
-            <div className='bg-gradient-to-br from-[#f5ebe0] to-[#faf6f1] p-6 rounded-[24px] border-2 border-[#e5d5c8] mb-6'>
-              <div className='flex items-start justify-between'>
-                <div className='flex-1'>
-                  <h4 className='text-sm font-medium text-[#4a6b5b] mb-2'>Question {activeIndex + 1}</h4>
-                  <p className='text-lg md:text-xl font-medium text-[#1a4d4d] leading-relaxed'>
-                    {NON_TECHNICAL_QUESTIONS[activeIndex].question}
-                  </p>
-                </div>
+            {/* Progress dots */}
+            <div className='flex items-center gap-1.5 bg-[#1a4d4d]/50 backdrop-blur-sm px-3 py-1.5 rounded-full'>
+              {NON_TECHNICAL_QUESTIONS.map((_, i) => (
                 <button
-                  onClick={() => speakQuestion(NON_TECHNICAL_QUESTIONS[activeIndex].question)}
-                  className='ml-4 w-12 h-12 bg-white rounded-full flex items-center justify-center hover:bg-[#f5ebe0] transition-all duration-300 shadow-soft hover:shadow-md group flex-shrink-0'
-                  title='Listen to question'
-                >
-                  <Volume2 className='w-5 h-5 text-[#2d5f5f] group-hover:scale-110 transition-transform' />
-                </button>
-              </div>
+                  key={i}
+                  onClick={() => setActiveIndex(i)}
+                  className={`w-2 h-2 rounded-full transition-all duration-300 cursor-pointer ${
+                    i === activeIndex
+                      ? 'bg-[#f5ebe0] scale-125'
+                      : feedbackList[i]
+                        ? 'bg-[#4a6b5b]'
+                        : 'bg-[#f5ebe0]/30 hover:bg-[#f5ebe0]/50'
+                  }`}
+                />
+              ))}
             </div>
 
-            {/* Tip */}
-            <div className='bg-gradient-to-br from-[#f4cdb8]/40 to-[#f5ddd1]/40 p-5 rounded-[20px] border-2 border-[#e8b4a8]/60'>
-              <div className='flex items-start space-x-3'>
-                <div className='w-8 h-8 bg-[#e8b4a8] rounded-[10px] flex items-center justify-center flex-shrink-0'>
-                  <Lightbulb className='w-4 h-4 text-white' />
-                </div>
-                <div>
-                  <h4 className='font-medium text-[#1a4d4d] mb-1'>Tip</h4>
-                  <p className='text-sm text-[#4b5563] leading-relaxed font-light'>
-                    {NON_TECHNICAL_QUESTIONS[activeIndex].tip}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Right: Webcam + Record ── */}
-          <div className='space-y-6'>
-            {/* Webcam card */}
-            <div className='bg-white/80 backdrop-blur-xl rounded-[32px] p-6 shadow-soft border-2 border-[#e5d5c8]'>
-              <h3 className='text-lg font-medium text-[#1a4d4d] mb-4 flex items-center gap-2'>
-                <Video className='w-5 h-5 text-[#4a6b5b]' />
-                Your Response
-              </h3>
-
-              <div className='relative w-full max-w-md mx-auto aspect-video overflow-hidden rounded-[24px] border-2 border-[#e5d5c8] bg-[#f5ebe0]'>
-                {webcamError ? (
-                  <div className='flex items-center justify-center h-full p-4'>
-                    <p className='text-sm text-red-600 text-center'>{webcamError}</p>
-                  </div>
-                ) : (
-                  <>
-                    <Image src='/webcam.png' width={200} height={200} className='absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-30' alt='Webcam Placeholder' />
-                    <Webcam ref={webcamRef} mirrored screenshotFormat="image/jpeg" onUserMediaError={handleWebcamError} className='relative z-10 w-full h-full object-cover' />
-                  </>
-                )}
-              </div>
-
-              {isRecording && (
-                <div className='mt-4 flex items-center justify-center gap-2 text-sm text-[#b91c1c]'>
-                  <span className='w-2 h-2 bg-red-500 rounded-full animate-pulse' />
-                  Recording in progress…
+            <div className='w-16 flex justify-end'>
+              {loading && (
+                <div className='flex items-center gap-1.5 bg-[#1a4d4d]/60 backdrop-blur-sm px-2.5 py-1 rounded-full text-[#f5ebe0]/70 text-[11px]'>
+                  <div className='w-3 h-3 border-2 border-[#f5ebe0]/20 border-t-[#f5ebe0] rounded-full animate-spin' />
+                  AI
                 </div>
               )}
             </div>
+          </div>
 
-            {/* Record button */}
-            <div className='flex justify-center'>
-              <Button
-                variant='outline'
-                disabled={loading}
-                onClick={toggleRecording}
-                className={`
-                  h-14 px-8 rounded-[28px] font-medium transition-all duration-300 text-base
-                  ${isRecording
-                    ? 'border-red-300 bg-red-50 hover:bg-red-100 text-[#b91c1c]'
-                    : 'border-[#e5d5c8] hover:border-[#4a6b5b] hover:bg-[#f5ebe0] text-[#2d5f5f]'
-                  }
-                `}
-              >
-                {isRecording ? (
-                  <span className='flex items-center gap-2'>
-                    <MicOff className='w-5 h-5' /> Stop Recording
-                  </span>
-                ) : (
-                  <span className='flex items-center gap-2'>
-                    <Mic className='w-5 h-5' /> Record Answer
-                  </span>
-                )}
-              </Button>
+          {/* ── QUESTION OVERLAY ── */}
+          <div className={`absolute top-14 left-4 right-4 z-30 transition-all duration-300 ${showQuestion ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}`}>
+            <div className='bg-[#1a4d4d]/75 backdrop-blur-xl rounded-[20px] p-4 border border-[#3d7373]/30'
+              style={{ boxShadow: '0 4px 20px rgba(45, 95, 95, 0.15)' }}>
+              <div className='flex items-start gap-3 mb-2'>
+                <span className='text-[10px] font-semibold text-[#c5d5d0] bg-[#4a6b5b]/40 px-2 py-0.5 rounded-full flex-shrink-0'>
+                  {NON_TECHNICAL_QUESTIONS[activeIndex].category}
+                </span>
+              </div>
+              <div className='flex items-start justify-between gap-3'>
+                <p className='text-[#f5ebe0] text-sm md:text-base font-medium leading-relaxed flex-1'>
+                  {NON_TECHNICAL_QUESTIONS[activeIndex].question}
+                </p>
+                <button
+                  onClick={() => speakQuestion(NON_TECHNICAL_QUESTIONS[activeIndex].question)}
+                  className='w-8 h-8 bg-[#f5ebe0]/15 hover:bg-[#f5ebe0]/25 rounded-full flex items-center justify-center transition-all flex-shrink-0'
+                  title='Listen to question'
+                >
+                  <Volume2 className='w-3.5 h-3.5 text-[#f5ebe0]/80' />
+                </button>
+              </div>
+              <div className='mt-3 flex items-start gap-2 bg-[#f5ebe0]/5 rounded-[12px] px-3 py-2'>
+                <Lightbulb className='w-3 h-3 text-[#f4cdb8]/70 mt-0.5 flex-shrink-0' />
+                <p className='text-[11px] text-[#f5ebe0]/50 leading-relaxed'>
+                  {NON_TECHNICAL_QUESTIONS[activeIndex].tip}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Navigation */}
-        <div className='flex justify-end gap-4 pt-6 border-t border-[#f0e6db]'>
-          {activeIndex > 0 && (
-            <Button
-              variant='outline'
-              onClick={() => setActiveIndex(activeIndex - 1)}
-              className='rounded-[20px] border-[#e5d5c8] hover:border-[#4a6b5b] hover:bg-[#f5ebe0] text-[#1f2937] font-medium transition-all duration-300'
-            >
-              <ArrowLeft className='w-4 h-4 mr-2' />
-              Previous
-            </Button>
+          {/* ── LIVE TRANSCRIPT ── */}
+          {(interimResult || userAnswer) && (
+            <div className='absolute bottom-28 left-4 right-4 z-30'>
+              <div className='bg-[#1a4d4d]/70 backdrop-blur-xl rounded-[12px] px-4 py-3 border border-[#3d7373]/20'>
+                <p className='text-[#f5ebe0] text-sm leading-relaxed text-center line-clamp-2'>
+                  {interimResult || userAnswer.split(' ').slice(-20).join(' ')}
+                </p>
+              </div>
+            </div>
           )}
-          {activeIndex < NON_TECHNICAL_QUESTIONS.length - 1 && (
-            <Button
-              onClick={() => setActiveIndex(activeIndex + 1)}
-              className='rounded-[28px] bg-[#2d5f5f] hover:bg-[#1a4d4d] text-white font-medium shadow-soft hover:shadow-md transition-all duration-300'
-            >
-              Next Question
-              <ArrowRight className='w-4 h-4 ml-2' />
-            </Button>
-          )}
-          {activeIndex === NON_TECHNICAL_QUESTIONS.length - 1 && (
-            <Button
-              onClick={() => setShowFeedback(true)}
-              className='rounded-[28px] bg-[#4a6b5b] hover:bg-[#2d4a3d] text-white font-medium shadow-soft hover:shadow-md transition-all duration-300'
-            >
-              <Flag className='w-4 h-4 mr-2' />
-              End Practice
-            </Button>
-          )}
-        </div>
+
+          {/* ── BOTTOM CONTROL BAR (inside camera HUD) ── */}
+          <div className='absolute bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-[#1a4d4d]/80 via-[#1a4d4d]/40 to-transparent px-5 pb-5 pt-10'>
+            <div className='flex items-center justify-between'>
+              {/* Left: Prev */}
+              <div className='w-24'>
+                {activeIndex > 0 && (
+                  <button
+                    onClick={() => setActiveIndex(activeIndex - 1)}
+                    className='flex items-center gap-1.5 text-[#f5ebe0]/70 hover:text-[#f5ebe0] text-sm font-medium transition-all hover:translate-x-[-2px]'
+                  >
+                    <ArrowLeft className='w-4 h-4' />
+                    Prev
+                  </button>
+                )}
+              </div>
+
+              {/* Center: Action buttons */}
+              <div className='flex items-center gap-3'>
+                {/* Toggle question */}
+                <button
+                  onClick={() => setShowQuestion(!showQuestion)}
+                  className='w-11 h-11 rounded-full bg-[#f5ebe0]/15 hover:bg-[#f5ebe0]/25 backdrop-blur-sm flex items-center justify-center transition-all text-[#f5ebe0]/80 hover:text-[#f5ebe0]'
+                  title={showQuestion ? 'Hide question' : 'Show question'}
+                >
+                  {showQuestion ? <ChevronUp className='w-5 h-5' /> : <ChevronDown className='w-5 h-5' />}
+                </button>
+
+                {/* MIC button */}
+                <button
+                  disabled={loading}
+                  onClick={toggleRecording}
+                  className={`
+                    relative flex items-center justify-center w-16 h-16 rounded-full transition-all duration-300
+                    ${isRecording
+                      ? 'bg-red-500 hover:bg-red-600 text-white ring-4 ring-red-400/30'
+                      : 'bg-[#f5ebe0] hover:bg-[#e5d5c8] text-[#1a4d4d]'
+                    }
+                    ${loading ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:scale-105'}
+                  `}
+                  style={{ boxShadow: isRecording ? '0 4px 20px rgba(239,68,68,0.3)' : '0 4px 16px rgba(0,0,0,0.15)' }}
+                  title={isRecording ? 'Stop Recording' : 'Start Recording'}
+                >
+                  {loading ? (
+                    <div className='w-6 h-6 border-2 border-current/30 border-t-current rounded-full animate-spin' />
+                  ) : isRecording ? (
+                    <MicOff className='w-7 h-7' />
+                  ) : (
+                    <Mic className='w-7 h-7' />
+                  )}
+                  {isRecording && !loading && (
+                    <span className='absolute inset-0 rounded-full border-2 border-red-400 animate-ping opacity-30' />
+                  )}
+                </button>
+
+                {/* Camera indicator */}
+                <button
+                  className='w-11 h-11 rounded-full bg-[#f5ebe0]/15 backdrop-blur-sm flex items-center justify-center text-[#f5ebe0]/60 cursor-default'
+                  title='Camera active'
+                >
+                  <Video className='w-5 h-5' />
+                </button>
+              </div>
+
+              {/* Right: Next/End */}
+              <div className='w-24 flex justify-end'>
+                {activeIndex < NON_TECHNICAL_QUESTIONS.length - 1 ? (
+                  <button
+                    onClick={() => setActiveIndex(activeIndex + 1)}
+                    className='flex items-center gap-1.5 text-[#f5ebe0]/70 hover:text-[#f5ebe0] text-sm font-medium transition-all hover:translate-x-[2px]'
+                  >
+                    Next
+                    <ArrowRight className='w-4 h-4' />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowFeedback(true)}
+                    className='flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-sm font-medium px-3 py-1.5 rounded-full transition-all'
+                    style={{ boxShadow: '0 2px 8px rgba(239,68,68,0.2)' }}
+                  >
+                    <Flag className='w-3.5 h-3.5' />
+                    End
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Status label */}
+            <p className={`text-center text-[11px] mt-3 font-medium ${isRecording ? 'text-red-400' : 'text-[#f5ebe0]/40'}`}>
+              {loading ? 'Analyzing your answer…' : isRecording ? 'Listening — speak your answer' : 'Tap the mic to start answering'}
+            </p>
+          </div>
       </div>
     </div>
   );
